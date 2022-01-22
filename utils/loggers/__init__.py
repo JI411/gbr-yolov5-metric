@@ -48,6 +48,7 @@ class Loggers():
                      'metrics/mAP_0.3', 'metrics/mAP_0.3:0.8', 'metrics/f2',        # metrics
                      'val/box_loss', 'val/obj_loss', 'val/cls_loss',                # val loss
                      'x/lr0', 'x/lr1', 'x/lr2']                                     # params
+        self.best_keys = ['best/epoch', 'best/precision', 'best/recall', 'best/mAP_0.5', 'best/mAP_0.5:0.95']
         for k in LOGGERS:
             setattr(self, k, None)  # init empty logger dictionary
         self.csv = True  # always log to csv
@@ -126,13 +127,17 @@ class Loggers():
                 self.tb.add_scalar(k, v, epoch)
 
         if self.wandb:
+            if best_fitness == fi:
+                best_results = [epoch] + vals[3:7]
+                for i, name in enumerate(self.best_keys):
+                    self.wandb.wandb_run.summary[name] = best_results[i]  # log best results in the summary
             self.wandb.log(x)
             self.wandb.end_epoch(best_result=best_fitness == fi)
 
     def on_model_save(self, last, epoch, final_epoch, best_fitness, fi):
         # Callback runs on model save event
         if self.wandb:
-            if ((epoch + 1) % self.opt.save_period == 0 and not final_epoch) and self.opt.save_period != -1:
+            if self.opt.save_period > 0 and (((epoch + 1) % self.opt.save_period) == 0) and not final_epoch:
                 self.wandb.log_model(last.parent, self.opt, epoch, fi, best_model=best_fitness == fi)
 
     def on_train_end(self, last, best, plots, epoch, results):
@@ -148,6 +153,7 @@ class Loggers():
                 self.tb.add_image(f.stem, cv2.imread(str(f))[..., ::-1], epoch, dataformats='HWC')
 
         if self.wandb:
+            self.wandb.log({k: v for k, v in zip(self.keys[3:10], results)})  # log best.pt val results
             self.wandb.log({"Results": [wandb.Image(str(f), caption=f.name) for f in files]})
             # Calling wandb.log. TODO: Refactor this into WandbLogger.log_model
             if not self.opt.evolve:
@@ -158,3 +164,9 @@ class Loggers():
             else:
                 self.wandb.finish_run()
                 self.wandb = WandbLogger(self.opt)
+
+    def on_params_update(self, params):
+        # Update hyperparams or configs of the experiment
+        # params: A dict containing {param: value} pairs
+        if self.wandb:
+            self.wandb.wandb_run.config.update(params, allow_val_change=True)
