@@ -173,15 +173,11 @@ def run(data,
     names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
     class_map = coco80_to_coco91_class() if is_coco else list(range(1000))
     s = ('%20s' + '%11s' * 7) % ('Class', 'Images', 'Labels', 'P', 'R', 'mAP@.3', 'mAP@.3:.8', 'F2')
-    dt, p, r, f1, mp, mr, map30, map, f2_mean = [0.0, 0.0, 0.0], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+    dt, p, r, f2, mp, mr, map30, map, mf2 = [0.0, 0.0, 0.0], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
     loss = torch.zeros(3, device=device)
     ap30 = []
     jdict, stats, ap, ap_class = [], [], [], []
     pbar = tqdm(dataloader, desc=s, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')  # progress bar
-
-    tp_per_level = [0 for _ in iouv]
-    fp_per_level = [0 for _ in iouv]
-    fn_per_level = [0 for _ in iouv]
 
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
         t1 = time_sync()
@@ -239,16 +235,7 @@ def run(data,
             else:
                 correct = torch.zeros(pred.shape[0], niou, dtype=torch.bool)
 
-            correct = correct.cpu()
-            num_predicted_bbox = correct.shape[0]
-            for iou_lvl, iou_th in enumerate(iouv):
-                correct_iou_lvl = correct[:, iou_lvl]
-                num_correct_bbox = correct_iou_lvl.sum()
-                tp_per_level[iou_lvl] += num_correct_bbox
-                fp_per_level[iou_lvl] += num_predicted_bbox - num_correct_bbox
-                fn_per_level[iou_lvl] += nl - num_correct_bbox
-
-            stats.append((correct, pred[:, 4].cpu(), pred[:, 5].cpu(), tcls))  # (correct, conf, pcls, tcls)
+            stats.append((correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls))  # (correct, conf, pcls, tcls)
 
             # Save/log
             if save_txt:
@@ -266,34 +253,19 @@ def run(data,
 
     # Compute metrics
 
-    eps = 0.00000001
-    f2_per_level = []
-    for iou_lvl, _ in enumerate(iouv):
-        f2_per_level.append(
-            5 * tp_per_level[iou_lvl] / (
-                    5 * tp_per_level[iou_lvl] +
-                    4 * fn_per_level[iou_lvl] +
-                    1 * fp_per_level[iou_lvl] +
-                    eps
-            )
-        )
-    f2_mean = torch.mean(torch.FloatTensor(f2_per_level)).cpu()
-    if verbose:
-        print('f2_per_level', f2_per_level)
-        print('f2_mean', f2_mean)
-
     stats = [np.concatenate(x, 0) for x in zip(*stats)]  # to numpy
     if len(stats) and stats[0].any():
-        tp, fp, p, r, f1, ap, ap_class = ap_per_class(*stats, plot=plots, save_dir=save_dir, names=names)
+        tp, fp, p, r, f2, ap, ap_class = ap_per_class(*stats, plot=plots, save_dir=save_dir, names=names)
+        print(f2)
         ap30, ap = ap[:, 0], ap.mean(1)  # AP@0.3, AP@0.3:0.8
-        mp, mr, map30, map = p.mean(), r.mean(), ap30.mean(), ap.mean()
+        mp, mr, map30, map, mf2 = p.mean(), r.mean(), ap30.mean(), ap.mean(), f2.mean()
         nt = np.bincount(stats[3].astype(np.int64), minlength=nc)  # number of targets per class
     else:
         nt = torch.zeros(1)
 
     # Print results
     pf = '%20s' + '%11i' * 2 + '%11.3g' * 5  # print format
-    LOGGER.info(pf % ('all', seen, nt.sum(), mp, mr, map30, map, f2_mean))
+    LOGGER.info(pf % ('all', seen, nt.sum(), mp, mr, map30, map, mf2))
 
     # Print results per class
     if (verbose or (nc < 50 and not training)) and nc > 1 and len(stats):
@@ -346,7 +318,7 @@ def run(data,
     maps = np.zeros(nc) + map
     for i, c in enumerate(ap_class):
         maps[c] = ap[i]
-    return (mp, mr, map30, map, f2_mean, *(loss.cpu() / len(dataloader)).tolist()), maps, t
+    return (mp, mr, map30, map, mf2, *(loss.cpu() / len(dataloader)).tolist()), maps, t
 
 
 def parse_opt():
