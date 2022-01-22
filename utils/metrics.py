@@ -80,7 +80,7 @@ def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names
         plot_mc_curve(px, r, Path(save_dir) / 'R_curve.png', names, ylabel='Recall')
 
     i = f2.mean(0).argmax()  # max F2 index
-    p, r, f2 = p[:, i], r[:, i], f2[:, i]
+    p, r = p[:, i], r[:, i]
     tp = (r * nt).round()  # true positives
     fp = (tp / (p + eps) - tp).round()  # false positives
     return tp, fp, p, r, f2, ap, unique_classes.astype('int32')
