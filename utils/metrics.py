@@ -50,29 +50,28 @@ def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names
 
         if n_p == 0 or n_l == 0:
             continue
-        else:
-            # Accumulate FPs and TPs
-            fpc = (1 - tp[i]).cumsum(0)
-            tpc = tp[i].cumsum(0)
+        # Accumulate FPs and TPs
+        fpc = (1 - tp[i]).cumsum(0)
+        tpc = tp[i].cumsum(0)
 
-            # Recall
-            recall = tpc / (n_l + eps)  # recall curve
-            r[ci] = np.interp(-px, -conf[i], recall[:, 0], left=0)  # negative x, xp because xp decreases
+        # Recall
+        recall = tpc / (n_l + eps)  # recall curve
+        r[ci] = np.interp(-px, -conf[i], recall[:, 0], left=0)  # negative x, xp because xp decreases
 
-            # Precision
-            precision = tpc / (tpc + fpc)  # precision curve
-            p[ci] = np.interp(-px, -conf[i], precision[:, 0], left=1)  # p at pr_score
+        # Precision
+        precision = tpc / (tpc + fpc)  # precision curve
+        p[ci] = np.interp(-px, -conf[i], precision[:, 0], left=1)  # p at pr_score
 
-            # AP from recall-precision curve
-            for j in range(tp.shape[1]):
-                ap[ci, j], mpre, mrec = compute_ap(recall[:, j], precision[:, j])
-                if plot and j == 0:
-                    py.append(np.interp(px, mrec, mpre))  # precision at mAP@0.5
+        # AP from recall-precision curve
+        for j in range(tp.shape[1]):
+            ap[ci, j], mpre, mrec = compute_ap(recall[:, j], precision[:, j])
+            if plot and j == 0:
+                py.append(np.interp(px, mrec, mpre))  # precision at mAP@0.5
 
     # Compute F2
     f2 = 5 * p * r / (4 * p + r + eps)
     names = [v for k, v in names.items() if k in unique_classes]  # list: only classes that have data
-    names = {i: v for i, v in enumerate(names)}  # to dict
+    names = dict(enumerate(names))
     if plot:
         plot_pr_curve(px, py, ap, Path(save_dir) / 'PR_curve.png', names)
         plot_mc_curve(px, f2, Path(save_dir) / 'F2_curve.png', names, ylabel='F2')
@@ -318,8 +317,7 @@ def calc_iou(bboxes1, bboxes2, bbox_mode='xywh'):
     interArea = np.maximum((xB - xA + 1), 0) * np.maximum((yB - yA + 1), 0)
     boxAArea = (x12 - x11 + 1) * (y12 - y11 + 1)
     boxBArea = (x22 - x21 + 1) * (y22 - y21 + 1)
-    iou = interArea / (boxAArea + np.transpose(boxBArea) - interArea)
-    return iou
+    return interArea / (boxAArea + np.transpose(boxBArea) - interArea)
 
 
 def f_beta(tp, fp, fn, beta=2):
