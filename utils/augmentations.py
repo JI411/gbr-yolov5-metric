@@ -21,20 +21,38 @@ class Albumentations:
             import albumentations as A
             check_version(A.__version__, '1.0.3', hard=True)  # version requirement
 
-            self.transform = A.Compose([
-                A.Blur(p=0.01),
-                A.MedianBlur(p=0.01),
-                A.ToGray(p=0.01),
+            aug_strong = [
+                A.HorizontalFlip(p=0.5),
+                A.VerticalFlip(p=0.5),
+                A.RandomRotate90(p=1.0),
                 A.CLAHE(p=0.01),
-                A.RandomBrightnessContrast(p=0.0),
-                A.RandomGamma(p=0.0),
-                A.ImageCompression(quality_lower=75, p=0.0)],
-                bbox_params=A.BboxParams(format='yolo', label_fields=['class_labels']))
+                A.OneOf([
+                    A.HueSaturationValue(p=0.5, hue_limit=0.05, sat_limit=0.7, val_limit=0.4),
+                    A.RandomBrightnessContrast(p=0.5, brightness_limit=0.15, contrast_limit=0.15),
+                    A.ToGray(p=0.1),
+                ], p=0.8),
+                A.OneOf([
+                    A.ShiftScaleRotate(p=0.4, shift_limit=0.1, rotate_limit=3, scale_limit=(0.5, 2.0), min_bbox=27,
+                                       max_bbox=None, border_mode=0, value=(114, 114, 114)),
+                    A.Perspective(p=0.1, scale=0.1, pad_mode=0, pad_val=(114, 114, 114)),
+                ], p=0.8),
+                A.OneOf([
+                    A.GaussianBlur(p=0.5, blur_limit=(3, 5)),
+                    A.MotionBlur(p=0.5, blur_limit=(3, 5)),
+                    A.MultiplicativeNoise(p=0.5, multiplier=(0.9, 1.1), per_channel=False, elementwise=True),
+                ], p=0.2),
+            ]
+            bbox_params = A.BboxParams(format='yolo', label_fields=['class_labels'], min_area=16, min_visibility=0.2)
+
+            self.transform = A.Compose(
+                [aug_strong],
+                bbox_params=bbox_params
+            )
 
             LOGGER.info(colorstr('albumentations: ') + ', '.join(f'{x}' for x in self.transform.transforms if x.p))
-        except ImportError:  # package not installed, skip
-            pass
+        except ImportError as e:  # package not installed, skip
             LOGGER.info(colorstr('albumentations: ') + 'not installed, skip')
+            raise e
         except Exception as e:
             LOGGER.info(colorstr('albumentations: ') + f'{e}')
 
